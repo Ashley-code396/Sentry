@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config, requireKh } from "./config.js";
 import { sentryDecide } from "./agent.js";
 import type { Decision } from "./decide.js";
 import { partialRepay } from "./defend.js";
@@ -9,17 +9,25 @@ import { checkHealth } from "./monitor.js";
 import { payForRiskCheck } from "./paycheck.js";
 import { publishRiskCheck } from "./publish.js";
 import { getPriceSignals } from "./signals.js";
+import { runDemo } from "./demo.js";
+import { runDoctor } from "./doctor.js";
+import { runOnboard } from "./onboard.js";
+import { runWatch } from "./watch.js";
 
-const kh = new KeeperHub(config.khApiKey);
 const cmd = process.argv[2];
+const arg = process.argv[3];
+
+function getKh(): KeeperHub {
+  return new KeeperHub(requireKh());
+}
 
 async function runCheck(): Promise<void> {
-  const status = await checkHealth(kh);
+  const status = await checkHealth(getKh());
   console.log(JSON.stringify({ ...status, threshold: config.hfThreshold }, null, 2));
 }
 
 async function runDecide(): Promise<void> {
-  const status = await checkHealth(kh);
+  const status = await checkHealth(getKh());
   const signals = await getPriceSignals();
   const decision = await sentryDecide(status, signals, false);
   console.log(
@@ -39,17 +47,17 @@ async function runDecide(): Promise<void> {
 
 async function runDefend(): Promise<void> {
   console.log(`[Sentry] Forcing partial repay of ${config.repayAmountUsdc} USDC...`);
-  const result = await partialRepay(kh);
+  const result = await partialRepay(getKh());
   console.log(`[Sentry] Repay confirmed: ${result.transactionLink}`);
 }
 
 async function runPublish(): Promise<void> {
-  const { slug, workflowId } = await publishRiskCheck(kh);
+  const { slug, workflowId } = await publishRiskCheck(getKh());
   console.log(`[Sentry] Published paid risk-check "${slug}" (workflow ${workflowId})`);
 }
 
 async function runPaycheck(): Promise<void> {
-  const result = await payForRiskCheck(kh, config.workflowSlug);
+  const result = await payForRiskCheck(getKh(), config.workflowSlug);
   if (!result.paid) {
     console.log(`[Sentry] Payment required but not settled. Challenge captured; install @keeperhub/wallet to auto-pay.`);
     process.exitCode = 2;
@@ -57,7 +65,7 @@ async function runPaycheck(): Promise<void> {
 }
 
 async function runExecutions(): Promise<void> {
-  const rows = await listRecentExecutions(kh);
+  const rows = await listRecentExecutions(getKh());
   if (!rows.length) {
     console.log(`[Sentry] No executions found.`);
     return;
@@ -71,13 +79,13 @@ async function runExecutions(): Promise<void> {
 }
 
 async function runAudit(executionId: string): Promise<void> {
-  const { markdown } = await renderAudit(kh, executionId);
+  const { markdown } = await renderAudit(getKh(), executionId);
   console.log(markdown);
-  await auditToFile(kh, executionId, config.auditOutFile);
+  await auditToFile(getKh(), executionId, config.auditOutFile);
 }
 
 async function runStageFailure(): Promise<void> {
-  await stageFailure(kh);
+  await stageFailure(getKh());
 }
 
 function findExecutedTx(steps: Decision["steps"]): string | null {
@@ -96,6 +104,7 @@ function findExecutedTx(steps: Decision["steps"]): string | null {
 async function runLoop(): Promise<void> {
   console.log(`[Sentry] Monitoring HF every 60s (threshold: ${config.hfThreshold}, dry-run: ${config.dryRun})`);
   let acted = false;
+  const kh = getKh();
 
   while (true) {
     const status = await checkHealth(kh);
@@ -130,6 +139,10 @@ async function runLoop(): Promise<void> {
 }
 
 const commands: Record<string, () => Promise<void>> = {
+  doctor: () => runDoctor(arg),
+  demo: () => runDemo(arg),
+  watch: () => runWatch(arg),
+  onboard: runOnboard,
   check: runCheck,
   decide: runDecide,
   defend: runDefend,
@@ -138,18 +151,19 @@ const commands: Record<string, () => Promise<void>> = {
   executions: runExecutions,
   "stage-failure": runStageFailure,
   audit: () => {
-    const executionId = process.argv[3];
-    if (!executionId) {
+    if (!arg) {
       console.error("Usage: npm run audit -- <executionId>");
       process.exit(1);
     }
-    return runAudit(executionId);
+    return runAudit(arg);
   },
   loop: runLoop,
 };
 
 if (!cmd || !commands[cmd]) {
-  console.error("Usage: npm run <check|decide|defend|publish|paycheck|executions|audit|stage-failure|loop>");
+  console.error(
+    "Usage: npm run <onboard|doctor|demo|watch|check|decide|defend|publish|paycheck|executions|audit|stage-failure|loop>"
+  );
   process.exit(1);
 }
 

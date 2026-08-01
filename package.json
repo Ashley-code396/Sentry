@@ -4,6 +4,10 @@
   "description": "Autonomous position-risk agent for Aave V3 on Base",
   "type": "module",
   "scripts": {
+    "onboard": "tsx src/index.ts onboard",
+    "doctor": "tsx src/index.ts doctor",
+    "demo": "tsx src/index.ts demo",
+    "watch": "tsx src/index.ts watch",
     "check": "tsx src/index.ts check",
     "decide": "tsx src/index.ts decide",
     "defend": "tsx src/index.ts defend",
@@ -12,6 +16,8 @@
     "executions": "tsx src/index.ts executions",
     "stage-failure": "tsx src/index.ts stage-failure",
     "audit": "tsx src/index.ts audit",
+    "web": "tsx src/web/server.ts",
+    "mcp": "tsx src/mcp-server.ts",
     "loop": "tsx src/index.ts loop"
   },
   "dependencies": {
@@ -19,6 +25,7 @@
     "@langchain/core": "^1.2.4",
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^16.4.7",
     "zod": "^4.4.3"
   },

@@ -8,8 +8,9 @@ export interface RepayResult {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function partialRepay(kh: KeeperHub): Promise<RepayResult> {
-  const amountWei = BigInt(Math.floor(config.repayAmountUsdc * 1e6)).toString();
+export async function partialRepay(kh: KeeperHub, amountUsdcOverride?: number): Promise<RepayResult> {
+  const amountUsdc = amountUsdcOverride ?? config.repayAmountUsdc;
+  const amountWei = BigInt(Math.floor(amountUsdc * 1e6)).toString();
 
   const result = (await kh.executeProtocolAction({
     actionType: "aave-v3/repay",

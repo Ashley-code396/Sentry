@@ -1,29 +1,47 @@
 # Sentry — Autonomous Position-Risk Agent
 
-Sentry monitors your Aave V3 health factor on Base and executes defensive partial repays through [KeeperHub MCP](https://docs.keeperhub.com/ai-tools/mcp-server). Every onchain action goes through KeeperHub — no custom transaction paths.
+Sentry watches an Aave V3 position on Base, reasons about the risk with a LangChain agent, and defends the position — partial repay, top-up, or close — with every onchain action executed through [KeeperHub MCP](https://docs.keeperhub.com/ai-tools/mcp-server). No custom transaction paths.
 
-## Architecture
+## Quickstart
 
-```mermaid
-flowchart LR
-  CLI["sentry CLI\n(check / decide / defend / loop)"]
-  Monitor["monitor.ts\nget-user-account-data"]
-  Signals["signals.ts\n5-min drawdown + vol"]
-  Agent["agent.ts\nLangChain ReAct agent"]
-  Defend["defend.ts\npartial USDC repay"]
-  KH["KeeperHub MCP\napp.keeperhub.com/mcp"]
-  Aave["Aave V3 Pool\nBase (8453)"]
+### 60 seconds → first verdict (no key, no tokens)
 
-  CLI --> Monitor
-  CLI --> Signals
-  CLI --> Agent
-  CLI --> Defend
-  Monitor --> KH
-  Signals -. HTTP .-> Binance
-  Agent --> KH
-  Defend --> KH
-  KH --> Aave
+```bash
+npm install
+npm run demo -- 0xYourAaveAddressOnBase   # any position, read-only, free
 ```
+
+Sentry reads the position straight from the Aave V3 Pool on Base (public RPC demo mode), pulls 5-minute market signals, runs the decision layer, and prints a verdict with reasons.
+
+### 5 minutes → first defensive action
+
+```bash
+npm run onboard    # guided .env setup wizard
+npm run doctor     # verify every prerequisite (✅/❌)
+npm run loop       # monitor every 60s and defend autonomously
+```
+
+The only things you need: a KeeperHub API key (`app.keeperhub.com → Settings → API keys`), a connected wallet integration, and a small Aave position on Base (see [Setup](#setup)).
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `npm run demo -- <addr>` | Read-only live verdict for any Aave V3 address on Base |
+| `npm run watch -- <addr>` | Live terminal dashboard (health-factor meter, signals, verdict) |
+| `npm run onboard` | Interactive setup wizard (writes `.env`) |
+| `npm run doctor` | Preflight checklist with clear next steps |
+| `npm run check` | Print current health factor (via KeeperHub) |
+| `npm run decide` | LangChain agent reasons over HF + signals (dry-run) |
+| `npm run defend` | Force a partial USDC repay via KeeperHub |
+| `npm run loop` | Monitor every 60s; on breach, reason then defend |
+| `npm run web` | Live web dashboard + chat (http://localhost:4321) |
+| `npm run mcp` | Expose Sentry as an MCP server (stdio) |
+| `npm run publish` | Publish the risk-check as a paid x402/MPP workflow |
+| `npm run paycheck` | Pay-per-call the published risk-check |
+| `npm run executions` | List recent KeeperHub executions |
+| `npm run audit -- <execId>` | Render the full trigger → decision → tx → outcome audit |
+| `npm run stage-failure` | Run a low-gas repay to exercise simulation/retry |
 
 ## Reasoning layer (LangChain)
 
@@ -33,55 +51,55 @@ flowchart LR
 
 Decision rule: `HF <= 1.05` → repay immediately. `HF < threshold` **and** drawdown ≥ 3% → partial repay (real cascade risk). `HF < threshold` with tiny drawdown → hold (noise, don't burn gas).
 
-## Phase 1 Core Loop
-
-1. **check** — read health factor via `aave-v3/get-user-account-data`
-2. **decide** — LangChain agent reasons over HF + price signals (dry-run by default)
-3. **defend** — partial USDC repay via `aave-v3/repay` when HF drops
-4. **loop** — poll every 60s; on breach, agent decides, then executes via KeeperHub
-
 ## Setup
 
-### 1. KeeperHub account
-
-1. Sign up at [app.keeperhub.com](https://app.keeperhub.com)
-2. Create an org-scoped API key (`kh_` prefix) under **Settings → API Keys → Organisation**
-3. Connect a wallet integration (required for write actions like repay)
-
-### 2. Fund wallet on Base
-
-- Send ETH on Base for gas
-- Hold USDC for repay actions (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`)
-- Approve USDC spending for the Aave V3 Pool contract
-
-### 3. Open an Aave V3 position
-
-Supply collateral and borrow on [Aave V3 Base](https://app.aave.com/?marketName=proto_base_v3) so Sentry has a health factor to monitor.
-
-### 4. Configure environment
-
-```bash
-cp .env.example .env
-# Edit .env with your KH_API_KEY and USER_ADDRESS
-```
+1. **KeeperHub account** — sign up at [app.keeperhub.com](https://app.keeperhub.com), create an org API key (`kh_`), and connect a wallet integration (required for write actions).
+2. **Fund on Base** — a few cents of ETH for gas (or enable KeeperHub gas sponsorship) and a few USDC for the repay. Base is cheap: a full demo runs on ~$20–30.
+3. **Open an Aave position** — supply collateral and borrow on [Aave V3 Base](https://app.aave.com/?marketName=proto_base_v3) so there's a health factor to defend. For a realistic breach, borrow close to your max so HF lands around 1.1–1.3.
+4. **Configure** — `npm run onboard` (writes `.env`), then `npm run doctor`.
 
 | Variable | Description |
 | --- | --- |
 | `KH_API_KEY` | KeeperHub org API key (`kh_…`) |
 | `USER_ADDRESS` | Wallet with the Aave position |
-| `HF_THRESHOLD` | Repay trigger (default `1.25`) |
+| `HF_THRESHOLD` | Defend trigger (default `1.25`) |
 | `REPAY_AMOUNT_USDC` | Partial repay size (default `5`) |
 | `NETWORK` | Chain ID (default `8453` = Base) |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Enables LLM reasoning (optional) |
+| `DRY_RUN` | `true` = decide only, never execute (safe demo mode) |
+| `PORT` | Web dashboard port (default `4321`) |
 
-### 5. Install and run
+## Web dashboard + chat
 
 ```bash
-npm install
-npm run check    # print current HF status
-npm run decide   # LangChain agent: reason over HF + signals, dry-run decision
-npm run defend   # force a partial USDC repay
-npm run loop     # monitor every 60s, agent defends once if HF < threshold
+npm run web     # → http://localhost:4321  (add ?addr=0x… to watch a position)
 ```
+
+- **Dashboard** — live health-factor meter, collateral/debt, market signals, verdict with reasons, and the audit trail (click an execution to see the full trigger → decision → tx → outcome chain).
+- **Chat** — talk to the LangChain agent in plain English ("what is my health factor?", "should I defend?"). It uses KeeperHub tools for reads, audits, and gated execution.
+- **Defend button** — triggers a partial repay through KeeperHub (blocked while `DRY_RUN=true`).
+
+API: `GET /api/status?addr=0x…`, `POST /api/chat {message}`, `GET /api/executions`, `GET /api/audit/:id`, `POST /api/defend`.
+
+## Sentry as an MCP server
+
+`npm run mcp` exposes Sentry's tools over MCP (stdio) so any MCP client — Claude Desktop, Cursor, Windsurf — can use it. Tools: `sentry_status`, `get_aave_account_data`, `get_price_signal`, `execute_protocol_action`, `defend`, `list_executions`, `get_execution`.
+
+Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp-server.ts"],
+      "cwd": "/path/to/hackathons/keeperhub/sentry"
+    }
+  }
+}
+```
+
+Then ask Claude: "what is the health factor of 0x…?" or "run sentry_status for my address".
 
 ## Phase 3 — Paid x402 risk-check
 
@@ -106,31 +124,37 @@ npm run stage-failure         # create + run a low-gas repay workflow to exercis
 - `audit.ts` pulls `get_execution` (status + per-step logs) and renders the full chain, including `gasUsed`, `effectiveGasPrice`, tx hashes and timestamps — the "reliability and observability" evidence.
 - `stage-failure` deliberately under-funds gas on the repay action so you can narrate KeeperHub's simulation-before-submit / retry / backoff from the audit log. For a real gas-spike demo, run `npm run defend` during a congestion window, then `npm run audit` the run.
 
-## Phase 1 Demo
+## Architecture
 
-```bash
-# 1. Verify position health
-npm run check
+```mermaid
+flowchart LR
+  CLI["Sentry CLI\n(onboard / doctor / demo / watch / loop)"]
+  Monitor["monitor.ts\nget-user-account-data"]
+  Signals["signals.ts\n5-min drawdown + vol"]
+  Agent["agent.ts\nLangChain ReAct agent"]
+  Defend["defend.ts\npartial USDC repay"]
+  KH["KeeperHub MCP\napp.keeperhub.com/mcp"]
+  Aave["Aave V3 Pool\nBase (8453)"]
 
-# 2. Start the monitoring loop
-npm run loop
-
-# 3. (Optional) Manually trigger a repay
-npm run defend
+  CLI --> Monitor
+  CLI --> Signals
+  CLI --> Agent
+  CLI --> Defend
+  Monitor --> KH
+  Signals -. HTTP .-> Binance
+  Agent --> KH
+  Defend --> KH
+  KH --> Aave
 ```
 
-Expected `check` output:
+## Troubleshooting
 
-```json
-{
-  "hf": 1.85,
-  "totalDebtBase": 1200.5,
-  "totalCollateralBase": 2500.0,
-  "threshold": 1.25
-}
-```
+- **`npm run doctor` flags something** — it tells you exactly what to fix; fix and re-run.
+- **Position reads as `HF 0.000`** — that address has no borrow on Aave V3 Base, or it's a no-position wallet. Use the address that actually holds the position.
+- **`defend` fails with no execution ID** — confirm the wallet integration is connected and funded in KeeperHub, and the USDC approval is set.
+- **LLM not reasoning** — set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) and re-run `npm run decide`. Without a key, Sentry uses the rule-based decision.
+- **KeeperHub action slugs changed** — verify at runtime with `search_protocol_actions` (Sentry does this before relying on them).
 
 ## Notes
 
-- Action slugs (`aave-v3/get-user-account-data`, `aave-v3/repay`) should be confirmed at runtime via `search_protocol_actions` if KeeperHub updates them.
-- Sentry uses KeeperHub MCP exclusively — no direct RPC or wallet signing in this repo.
+- Sentry uses KeeperHub MCP exclusively for every onchain action — the only non-KeeperHub network reads are the public price feed (Binance) and the read-only demo fallback (Base public RPC).

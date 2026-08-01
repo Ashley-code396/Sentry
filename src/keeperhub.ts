@@ -34,6 +34,10 @@ export class KeeperHub {
     return this.callTool("get_direct_execution_status", { executionId });
   }
 
+  async getWalletIntegration(): Promise<unknown> {
+    return this.callTool("get_wallet_integration", {});
+  }
+
   // -- workflows --
 
   async createWorkflow(payload: Record<string, unknown>): Promise<unknown> {

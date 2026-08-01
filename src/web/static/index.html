@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sentry — Position-Risk Agent</title>
+<style>
+  :root {
+    --bg: #0b0f0e;
+    --panel: #121816;
+    --panel2: #18211e;
+    --border: #24302c;
+    --fg: #dce6e1;
+    --muted: #8aa097;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --cyan: #22d3ee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+  }
+  header { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 2px; color: var(--green); }
+  header .tag { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; padding: 16px 22px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .addr { display: flex; gap: 8px; margin-bottom: 16px; }
+  .addr input { flex: 1; background: var(--panel2); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 8px 10px; font-family: inherit; }
+  button { background: var(--green); color: #06201a; border: 0; border-radius: 6px; padding: 8px 14px; font-family: inherit; font-weight: 700; cursor: pointer; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpi { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .kpi .label { color: var(--muted); font-size: 11px; }
+  .kpi .value { font-size: 20px; margin-top: 4px; }
+  .meter { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .bar { height: 14px; width: 100%; background: var(--panel2); border-radius: 7px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 7px; transition: width .5s ease; }
+  .verdict { border-left: 4px solid var(--green); background: var(--panel2); border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+  .verdict .action { font-size: 18px; font-weight: 800; }
+  .verdict ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+  .chat { display: flex; flex-direction: column; height: 100%; min-height: 420px; }
+  .chat .log { flex: 1; overflow-y: auto; max-height: 420px; display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+  .msg { padding: 8px 10px; border-radius: 8px; max-width: 92%; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--green); color: #06201a; }
+  .msg.bot { align-self: flex-start; background: var(--panel2); border: 1px solid var(--border); }
+  .msg .tools { color: var(--cyan); font-size: 11px; margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 6px; }
+  .chat form { display: flex; gap: 8px; margin-top: 10px; }
+  .chat form input { flex: 1; background: var(--panel2); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 9px 10px; font-family: inherit; }
+  .small { color: var(--muted); font-size: 11px; }
+  .exec { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+  .exec:hover { border-color: var(--green); }
+  .badge { padding: 1px 7px; border-radius: 9px; font-size: 11px; }
+  .badge.success { background: rgba(52,211,153,.15); color: var(--green); }
+  .badge.failed, .badge.error { background: rgba(248,113,113,.15); color: var(--red); }
+  .badge.running { background: rgba(251,191,36,.15); color: var(--yellow); }
+  .audit { margin-top: 12px; }
+  .audit pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 12px; line-height: 1.5; }
+  .flash { position: fixed; right: 18px; bottom: 18px; background: var(--panel2); border: 1px solid var(--border); padding: 10px 14px; border-radius: 8px; opacity: 0; transition: opacity .3s; }
+  .flash.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ SENTRY</h1>
+  <span class="tag">autonomous position-risk agent · Aave V3 on Base · executed via KeeperHub</span>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>Position</h2>
+      <div class="addr">
+        <input id="addr" placeholder="Aave V3 address on Base (0x…)" />
+        <button id="watchBtn" class="ghost">Watch</button>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="label">Health factor</div><div class="value" id="hf">—</div></div>
+        <div class="kpi"><div class="label">Collateral</div><div class="value" id="collateral">—</div></div>
+        <div class="kpi"><div class="label">Debt</div><div class="value" id="debt">—</div></div>
+        <div class="kpi"><div class="label">ETH / drawdown / vol</div><div class="value" id="signals">—</div></div>
+      </div>
+      <div class="meter">
+        <span class="small" style="width:80px">health factor</span>
+        <div class="bar"><div id="hfBar" style="width:0%"></div></div>
+        <span id="hfValue" class="small" style="width:70px">—</span>
+      </div>
+      <div id="verdict" class="verdict"><span class="small">no verdict yet</span></div>
+      <p class="small" id="meta"></p>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button id="defendBtn">Defend now</button>
+        <button id="refreshBtn" class="ghost">Refresh</button>
+      </div>
+    </div>
+
+    <div class="panel audit" style="margin-top:16px;">
+      <h2>Audit trail</h2>
+      <div id="execs" class="small">—</div>
+      <div id="auditDetail"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel chat">
+      <h2>Talk to Sentry</h2>
+      <div class="log" id="chatlog"></div>
+      <form id="chatform">
+        <input id="chatInput" placeholder='try: "what is my health factor?" or "should I defend?"' autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+      <p class="small">Chat uses the LangChain agent with KeeperHub tools. Actions respect DRY_RUN.</p>
+    </div>
+  </section>
+</main>
+
+<div class="flash" id="flash"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ADDR = new URLSearchParams(location.search).get("addr") || "";
+let execSelected = null;
+
+function flash(msg) {
+  const f = $("flash");
+  f.textContent = msg;
+  f.classList.add("show");
+  setTimeout(() => f.classList.remove("show"), 2200);
+}
+
+function setValue(id, val) {
+  $(id).textContent = val;
+}
+
+function riskColor(action) {
+  return action === "hold" ? "var(--green)" : action === "repay" ? "var(--yellow)" : "var(--red)";
+}
+
+async function loadStatus() {
+  const q = ADDR ? `?addr=${encodeURIComponent(ADDR)}` : "";
+  try {
+    const res = await fetch(`/api/status${q}`);
+    const data = await res.json();
+    if (data.error) {
+      setValue("hf", "—"); setValue("hfValue", data.error);
+      $("verdict").innerHTML = `<span class="small">${data.error}</span>`;
+      return;
+    }
+    const hf = data.health.hf;
+    const th = data.threshold;
+    setValue("hf", hf.toFixed(3));
+    setValue("hfValue", hf.toFixed(3));
+    setValue("collateral", "$" + data.health.totalCollateralBase.toFixed(2));
+    setValue("debt", "$" + data.health.totalDebtBase.toFixed(2));
+    const s = data.signals;
+    setValue("signals", s.priceUsd ? `$${s.priceUsd.toFixed(2)} / ${s.drawdownPct.toFixed(2)}% / ${s.volatilityPct.toFixed(2)}%` : "feed down");
+    const ratio = Math.min(1, hf / (th * 2));
+    $("hfBar").style.width = `${Math.round(ratio * 100)}%`;
+    $("hfBar").style.background = hf <= th ? "var(--red)" : hf <= th * 1.4 ? "var(--yellow)" : "var(--green)";
+    const d = data.decision;
+    $("verdict").innerHTML =
+      `<div class="action" style="color:${riskColor(d.action)}">${d.action.toUpperCase()}${d.amountUsdc ? ` ${d.amountUsdc} USDC` : ""}</div>` +
+      `<span class="small">${d.risk} risk · ${Math.round(d.confidence * 100)}% confidence · source ${d.source}</span>` +
+      `<ul>${d.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`;
+    $("meta").textContent = `address ${data.address} · read via ${data.readPath} · dry-run ${data.dryRun ? "ON" : "off"} · ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    setValue("hf", "—");
+  }
+}
+
+async function loadExecs() {
+  try {
+    const res = await fetch("/api/executions");
+    const rows = await res.json();
+    if (!rows.length) { $("execs").textContent = "no executions yet"; return; }
+    $("execs").innerHTML = rows.slice(0, 8).map((r) => {
+      const status = String(r.status || "?");
+      const cls = status === "success" ? "success" : status === "failed" || status === "error" ? "failed" : "running";
+      const hashes = (r.transactionHashes || []).map((h) => h.slice(0, 10) + "…").join(", ");
+      return `<div class="exec" data-id="${r.id}">
+        <span>${r.id}</span>
+        <span class="badge ${cls}">${status}</span>
+        <span>${hashes || "—"}</span>
+      </div>`;
+    }).join("");
+    document.querySelectorAll(".exec").forEach((el) =>
+      el.addEventListener("click", () => loadAudit(el.dataset.id))
+    );
+  } catch (err) { $("execs").textContent = "failed to load executions"; }
+}
+
+async function loadAudit(id) {
+  try {
+    const res = await fetch(`/api/audit/${id}`);
+    const data = await res.json();
+    $("auditDetail").innerHTML = `<h3 class="small">${id}</h3><pre>${escapeHtml(data.markdown)}</pre>`;
+  } catch (err) { $("auditDetail").innerHTML = `<span class="small">could not load audit</span>`; }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function addMsg(role, text, tools) {
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  el.textContent = text;
+  if (tools && tools.length) {
+    const t = document.createElement("div");
+    t.className = "tools";
+    t.textContent = tools.map((s) => `→ ${s.name}`).join("  ·  ");
+    el.appendChild(t);
+  }
+  $("chatlog").appendChild(el);
+  $("chatlog").scrollTop = $("chatlog").scrollHeight;
+  return el;
+}
+
+$("chatform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("chatInput").value.trim();
+  if (!text) return;
+  addMsg("user", text);
+  $("chatInput").value = "";
+  const pending = addMsg("bot", "thinking…");
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, addr: ADDR }),
+    });
+    const data = await res.json();
+    if (data.error) { pending.textContent = "error: " + data.error; return; }
+    pending.textContent = data.reply;
+    if (data.steps && data.steps.length) {
+      const t = document.createElement("div");
+      t.className = "tools";
+      t.textContent = data.steps.map((s) => `→ ${s.name}`).join("  ·  ");
+      pending.appendChild(t);
+    }
+    loadStatus();
+    loadExecs();
+  } catch (err) {
+    pending.textContent = "request failed";
+  }
+});
+
+$("defendBtn").addEventListener("click", async () => {
+  if (!confirm("Trigger a partial repay through KeeperHub?")) return;
+  const btn = $("defendBtn");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/defend", { method: "POST" });
+    const data = await res.json();
+    if (data.error) { flash("✘ " + data.error); }
+    else { flash("✔ Repay: " + data.transactionLink); }
+    loadExecs();
+  } catch (err) { flash("request failed"); }
+  btn.disabled = false;
+});
+
+$("watchBtn").addEventListener("click", () => {
+  ADDR = $("addr").value.trim();
+  if (ADDR) history.replaceState(null, "", "?addr=" + encodeURIComponent(ADDR));
+  loadStatus();
+});
+
+(async () => {
+  if (ADDR) $("addr").value = ADDR;
+  await loadStatus();
+  loadExecs();
+  setInterval(loadStatus, 5000);
+})();
+</script>
+</body>
+</html>
