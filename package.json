@@ -1,0 +1,30 @@
+{
+  "name": "sentry",
+  "version": "0.1.0",
+  "description": "Autonomous position-risk agent for Aave V3 on Base",
+  "type": "module",
+  "scripts": {
+    "check": "tsx src/index.ts check",
+    "decide": "tsx src/index.ts decide",
+    "defend": "tsx src/index.ts defend",
+    "publish": "tsx src/index.ts publish",
+    "paycheck": "tsx src/index.ts paycheck",
+    "executions": "tsx src/index.ts executions",
+    "stage-failure": "tsx src/index.ts stage-failure",
+    "audit": "tsx src/index.ts audit",
+    "loop": "tsx src/index.ts loop"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^1.5.2",
+    "@langchain/core": "^1.2.4",
+    "@langchain/langgraph": "^1.4.8",
+    "@langchain/openai": "^1.5.5",
+    "dotenv": "^16.4.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
